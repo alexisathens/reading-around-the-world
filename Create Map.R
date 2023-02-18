@@ -123,10 +123,13 @@ books %<>%
     author %in% c("Isaac Fitzgerald", "Dan Schilling", "Cal Newport", "Marguerite Roza", "Emily Nagoski", 
                   "Meg Jay", "Helaine Olen", "J.D. Vance", "Nancy Foner", "Alfred Lansing", "Oren Cass",
                   "Stanley D. Frank", "Susan Cain", "Kerry Patterson", "Joel Best", "Spencer Johnson",
-                  "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations") ~ "United States",
+                  "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations", "Torrey Peters",
+                  "Melissa Febos", "Nicholas Carr", "Finn Murphy", "Lori Gottlieb", "Paul Kalanithi", "Andy Hunt",
+                  "Robert T. Kiyosaki", "Kurt Vonnegut Jr.", "James Clear", "Lee Airton", "Matthew Desmond",
+                  "William Finnegan") ~ "United States",
     author %in% c("J.K. Rowling", "Alex Rawlings", "Oliver Burkeman", "Rob Hopkins", "Greg McKeown",
-                  "Douglas   Stuart") ~ "United Kingdom",
-    author %in% c("Sohn Won-Pyung") ~ "South Korea",
+                  "Douglas   Stuart", "Mary Wollstonecraft Shelley") ~ "United Kingdom",
+    author %in% c("Sohn Won-Pyung", "Cho Nam-Joo") ~ "South Korea",
     author %in% c("Gabriel García Márquez") ~ "Colombia",
     author %in% c("Abhijit V. Banerjee") ~ "India",
     author %in% c("Ernesto Che Guevara") ~ "Argentina",
@@ -134,11 +137,17 @@ books %<>%
     author %in% c("Viktor E. Frankl") ~ "Austria",
     author %in% c("Hyeonseo Lee") ~ "North Korea",
     author %in% c("Rory Carroll") ~ "Ireland",
+    author %in% c("Wade Davis") ~ "Canada",
+    author %in% c("Walpola Rahula") ~ "Sri Lanka",
+    
     
     # template: author %in% c() ~ ""
     
     TRUE ~ NA_character_
   ))
+
+          
+          
 
 
 
@@ -197,13 +206,37 @@ auto_names <- books %>% distinct(birth_place_fixed) %>% drop_na() %>% pull()
 setdiff(auto_names, country_names$country_name)
 
 
+## condense into single country field and clean up
 
+books %<>% 
+  select(-birth_place) %>% # drop original messed up field
+  mutate(birth_place = birth_place_manual) %>% # fill with manual first, then auto
+  mutate(birth_place = ifelse(is.na(birth_place), birth_place_fixed, birth_place))
 
+# double check no missing countries
+books %>% filter(is.na(birth_place))
 
+# drop intermediary fields
+books %<>% select(id:author, birth_place)
+
+# finally, aggregate to country level!
+country_reads <- books %>% 
+  group_by(birth_place) %>% 
+  count() %>% 
+  ungroup() %>% 
+  rename(books = n)
 
 
 
 ### color world map based on read count ---------
 
+## check out basic world map
 
-# ggplot() + geom_sf(data = map, color = "darkgreen") # takes FOREVER
+ggplot() + geom_sf(data = map) # takes FOREVER
+
+
+## aggregate data based on country level and join to map df
+
+
+
+
