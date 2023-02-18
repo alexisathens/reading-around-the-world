@@ -20,133 +20,33 @@ books %<>%
 ### set up RSelenium for web scraping ---------
 
 # # close docker container from before (skip if first run)
-# system('docker stop firefox')
-# system('docker rm firefox')
-# 
-# # set up docker container
-# system('docker run --platform linux/amd64 --name firefox -v /dev/shm:/dev/shm -d -p 4567:4444 -p 5901:5900 selenium/standalone-firefox:latest')
-# 
-# # check new container open
-# # system('docker ps -a')
-# 
-# # open a virtual network 
-# system('open vnc://127.0.0.1:5901')
-# 
-# # specify the remote driver
-# remDr <- remoteDriver(port = 4567L, browser = "firefox")
-# 
-# # open up a firefox window in the VNC
-# remDr$open()
+system('docker stop firefox')
+system('docker rm firefox')
+
+# set up docker container
+system('docker run --platform linux/amd64 --name firefox -v /dev/shm:/dev/shm -d -p 4567:4444 -p 5901:5900 selenium/standalone-firefox:latest')
+
+# check new container open
+# system('docker ps -a')
+
+# open a virtual network
+system('open vnc://127.0.0.1:5901')
+
+# specify the remote driver
+remDr <- remoteDriver(port = 4567L, browser = "firefox")
+
+# open up a firefox window in the VNC
+remDr$open()
 
 
 
-### scrape Wikipedia for author's URL ---------
+### first pass using simple Wiki extension for author JSON ------------------
 
-# # initialize column to store author URL
-# books$url <- NA
-# 
-# # define buffer to not overload website
-# buffer_sec <- 1
-# 
-# ## loop through all books and get author's Wiki URL
-# for(i in 1:nrow(books)){
-#   
-#   # send message to console
-#   cat(paste0("**** Retrieving info for author ", i, " of ", nrow(books), " ****  \n")); flush.console()
-#   
-#   if(!is.na(books$url[i])){
-#     # if the author URL has already been found (would be the case in reading the same author multiple times), skip
-#     next
-#   }
-#   
-#   # navigate to Wikipedia
-#   remDr$navigate('https://www.wikipedia.org/')
-#   Sys.sleep(buffer_sec)
-#   
-#   # search for search box element
-#   search_box <- remDr$findElement(using = 'id', value = 'searchInput')
-#   Sys.sleep(buffer_sec)
-#   
-#   # enter author name into search bar and go
-#   search_box$sendKeysToElement(list(books$author[i], key = 'enter'))
-#   Sys.sleep(buffer_sec)
-#   
-#   # give time for page to load
-#   remDr$setTimeout(type = "page load", milliseconds = 10000)
-#   
-#   # check if a disambiguation page
-#   ambiguous <- NULL
-#   
-#   try(ambiguous <- remDr$findElement(using = "link text", value = "disambiguation"), silent = TRUE)
-#   
-#   if(!is.null(ambiguous)){
-#     # if it's an ambiguous page, skip to the next author and continue
-#     next
-#   }
-#   
-#   # get URL of author webpage
-#   author_url <- remDr$getCurrentUrl()[[1]]
-#   Sys.sleep(buffer_sec)
-#   
-#   # parse URL, just keeping author extension (last element)
-#   author_short <- tail(str_split(author_url, "/")[[1]], 1)
-#   
-#   # store URL in df for all author instances
-#   books$url[which(books$author[i] == books$author)] <- author_short
-#   
-# }
-# 
-# 
-# 
-# 
-# 
-# 
-# 
-# ## need error catching!
-# 
-# # Douglas Stuart - ambiguous
-# # Isaac Fitzgerald - no side bar
-# 
-# # checking if country in the list exists
-# suppressMessages({
-#   try(elem <- remDr$findElement(using = "link text", value = this_country_name), silent = TRUE)
-# })
-# 
-# if(is.null(elem)){ # if the country isn't on the WTO website, skip it
-#   
-#   next # next skips the current iteration of the loop (skips to the next c)
-#   # see: https://www.datamentor.io/r-programming/break-next/
-#   
-# }
-# 
-# 
-# # search for search box element
-# search_box <- remDr$findElement(using = 'id', value = 'searchInput')
-# 
-# # enter author name into search bar and go
-# search_box$sendKeysToElement(list(books$author[5], key = 'enter'))
-# 
-# # give time for page to load
-# remDr$setTimeout(type = "page load", milliseconds = 10000)
-# 
-# # get URL of author webpage
-# author_url <- remDr$getCurrentUrl()[[1]]
-# 
-# # parse URL, just keeping author extension (last element)
-# author_short <- tail(str_split(author_url, "/")[[1]], 1)
-
-
-
-
-### assume simple Wikipedia extension
+## assume simple Wikipedia extension
 
 # there's a standard format for each author's Wikipedia extension, which is their full name with spaces replaced by underscores
 books$basic_url <- str_replace_all(books$author, " ", "_")
 # assume this is the case. if it doesn't work, we'll find the author manually later
-
-
-## manual edits to author
-
 
 # also initialize birth_place column because this is what we want to figure out
 books$birth_place <- NA
@@ -158,7 +58,6 @@ books$birth_place <- NA
 # (4) side bar but no birth_place
 # strategy is to skip all of these cases and fill in manually
 
-head(books)
 
 for(i in 1:nrow(books)){
   
@@ -235,7 +134,104 @@ for(i in 1:nrow(books)){
 
 
 
-## make manual adjustments for those on the list
+## next: use RSelenium to check if author url was wrong
+
+missing_authors <- books %>% filter(is.na(birth_place)) %>% distinct(author)
+
+
+
+### scrape Wikipedia for missing author's URL ---------
+
+
+## NEED TO TEST NEXT!
+
+# initialize column to store author URL
+books$fixed_url <- NA
+
+# define buffer to not overload website
+buffer_sec <- 1
+
+## loop through all books and get author's Wiki URL
+for(i in 1:nrow(missing_authors)){
+
+  # send message to console
+  cat(paste0("**** Retrieving info for author ", i, " of ", nrow(missing_authors), " ****  \n")); flush.console()
+
+  # navigate to Wikipedia
+  remDr$navigate('https://www.wikipedia.org/')
+  Sys.sleep(buffer_sec)
+
+  # search for search box element
+  search_box <- remDr$findElement(using = 'id', value = 'searchInput')
+  Sys.sleep(buffer_sec)
+
+  # enter author name into search bar and go
+  search_box$sendKeysToElement(list(missing_authors[i], key = 'enter'))
+  Sys.sleep(buffer_sec)
+
+  # give time for page to load
+  remDr$setTimeout(type = "page load", milliseconds = 10000)
+
+  # check if a disambiguation page
+  ambiguous <- NULL
+
+  try(ambiguous <- remDr$findElement(using = "link text", value = "disambiguation"), silent = TRUE)
+
+  if(!is.null(ambiguous)){
+    # if it's an ambiguous page, skip to the next author and continue
+    next
+  }
+
+  # get URL of author webpage
+  author_url <- remDr$getCurrentUrl()[[1]]
+  Sys.sleep(buffer_sec)
+
+  # parse URL, just keeping author extension (last element)
+  author_short <- tail(str_split(author_url, "/")[[1]], 1)
+
+  # store URL in df for all author instances
+  books$fixed_url[which(books$author[i] == books$author)] <- author_short
+
+}
+
+
+
+
+
+
+
+## need error catching!
+
+# Douglas Stuart - ambiguous
+# Isaac Fitzgerald - no side bar
+
+# checking if country in the list exists
+suppressMessages({
+  try(elem <- remDr$findElement(using = "link text", value = this_country_name), silent = TRUE)
+})
+
+if(is.null(elem)){ # if the country isn't on the WTO website, skip it
+
+  next # next skips the current iteration of the loop (skips to the next c)
+  # see: https://www.datamentor.io/r-programming/break-next/
+
+}
+
+
+# search for search box element
+search_box <- remDr$findElement(using = 'id', value = 'searchInput')
+
+# enter author name into search bar and go
+search_box$sendKeysToElement(list(books$author[5], key = 'enter'))
+
+# give time for page to load
+remDr$setTimeout(type = "page load", milliseconds = 10000)
+
+# get URL of author webpage
+author_url <- remDr$getCurrentUrl()[[1]]
+
+# parse URL, just keeping author extension (last element)
+author_short <- tail(str_split(author_url, "/")[[1]], 1)
 
 
 
