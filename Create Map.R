@@ -1,8 +1,8 @@
 library(tidyverse)
 library(magrittr)
 library(readxl)
-#library(RSelenium)
 library(RJSONIO) # for reading Wiki JSON files
+# library(RSelenium) # for scraping Wiki pages
 
 ### download exported library from Goodreads ---------
 # download data by going to My Books > on side bar under Tools, select Import and export > click Export Library
@@ -19,24 +19,24 @@ books %<>%
 
 ### set up RSelenium for web scraping ---------
 
-# # close docker container from before (skip if first run)
-system('docker stop firefox')
-system('docker rm firefox')
-
-# set up docker container
-system('docker run --platform linux/amd64 --name firefox -v /dev/shm:/dev/shm -d -p 4567:4444 -p 5901:5900 selenium/standalone-firefox:latest')
-
-# check new container open
-# system('docker ps -a')
-
-# open a virtual network
-system('open vnc://127.0.0.1:5901')
-
-# specify the remote driver
-remDr <- remoteDriver(port = 4567L, browser = "firefox")
-
-# open up a firefox window in the VNC
-remDr$open()
+# # # close docker container from before (skip if first run)
+# system('docker stop firefox')
+# system('docker rm firefox')
+# 
+# # set up docker container
+# system('docker run --platform linux/amd64 --name firefox -v /dev/shm:/dev/shm -d -p 4567:4444 -p 5901:5900 selenium/standalone-firefox:latest')
+# 
+# # check new container open
+# # system('docker ps -a')
+# 
+# # open a virtual network
+# system('open vnc://127.0.0.1:5901')
+# 
+# # specify the remote driver
+# remDr <- remoteDriver(port = 4567L, browser = "firefox")
+# 
+# # open up a firefox window in the VNC
+# remDr$open()
 
 
 
@@ -51,11 +51,8 @@ books$basic_url <- str_replace_all(books$author, " ", "_")
 # also initialize birth_place column because this is what we want to figure out
 books$birth_place <- NA
 
-# note that there are a few different breaking points:
-# (1) no Wikipedia page, i = 22
-# (2) ambiguous Wiki page, i = 6
-# (3) Wiki page but with no side bar info, i = 1
-# (4) side bar but no birth_place
+# note that there are a few different breaking points, such as:
+# no Wikipedia page, ambiguous Wiki page, Wiki page but with no side bar info, side bar but no birth_place, etc.
 # strategy is to skip all of these cases and fill in manually
 
 
@@ -116,6 +113,8 @@ for(i in 1:nrow(books)){
 
 mean(!is.na(books$birth_place)) # about 2/3 of authors found
 
+
+## clean up country names slightly
 books$birth_place_parsed <- NA
 
 # parse strings, taking last chunk as country
@@ -134,16 +133,44 @@ for(i in 1:nrow(books)){
 
 
 
-## next: use RSelenium to check if author url was wrong
 
-missing_authors <- books %>% filter(is.na(birth_place)) %>% distinct(author)
+
+## next: get list of missing authors and fill in manually
+
+missing_authors <- books %>% filter(is.na(birth_place)) %>% distinct(author) %>% pull(author)
+
+# tip: print missing authors to console, use option key stroke to organize, and then group by country
+
+books %<>% 
+  mutate(birth_place_manual = case_when(
+    author %in% c("Isaac Fitzgerald", "Dan Schilling", "Cal Newport", "Marguerite Roza", "Emily Nagoski", 
+                  "Meg Jay", "Helaine Olen", "J.D. Vance", "Nancy Foner", "Alfred Lansing", "Oren Cass",
+                  "Stanley D. Frank", "Susan Cain", "Kerry Patterson", "Joel Best", "Spencer Johnson",
+                  "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations") ~ "US",
+    author %in% c("J.K. Rowling", "Alex Rawlings", "Oliver Burkeman", "Rob Hopkins", "Douglas   Stuart",
+                  "Greg McKeown") ~ "UK",
+    author %in% c("Sohn Won-Pyung") ~ "South Korea",
+    author %in% c("Gabriel García Márquez") ~ "Colombia",
+    author %in% c("Abhijit V. Banerjee") ~ "India",
+    author %in% c("Ernesto Che Guevara") ~ "Argentina",
+    author %in% c("Sönke Ahrens") ~ "Germany",
+    author %in% c("Viktor E. Frankl") ~ "Austria",
+    author %in% c("Hyeonseo Lee") ~ "North Korea",
+    author %in% c("Rory Carroll") ~ "Ireland",
+    
+    # template: author %in% c() ~ ""
+    
+    TRUE ~ NA_character_
+  ))
+
+
+
 
 
 
 ### scrape Wikipedia for missing author's URL ---------
 
 
-## NEED TO TEST NEXT!
 
 # initialize column to store author URL
 books$fixed_url <- NA
@@ -152,10 +179,10 @@ books$fixed_url <- NA
 buffer_sec <- 1
 
 ## loop through all books and get author's Wiki URL
-for(i in 1:nrow(missing_authors)){
+for(i in 1:length(missing_authors)){
 
   # send message to console
-  cat(paste0("**** Retrieving info for author ", i, " of ", nrow(missing_authors), " ****  \n")); flush.console()
+  cat(paste0("**** Retrieving info for author ", i, " of ", length(missing_authors), " ****  \n")); flush.console()
 
   # navigate to Wikipedia
   remDr$navigate('https://www.wikipedia.org/')
@@ -188,11 +215,25 @@ for(i in 1:nrow(missing_authors)){
 
   # parse URL, just keeping author extension (last element)
   author_short <- tail(str_split(author_url, "/")[[1]], 1)
-
-  # store URL in df for all author instances
-  books$fixed_url[which(books$author[i] == books$author)] <- author_short
-
+  
+  # compare to current author URL
+  author_curr_url <- books$basic_url[which(books$author == missing_authors[i])]
+  
+  if(any(author_short != author_curr_url)){
+    # if different from basic URL, store it
+    books$fixed_url[which(books$author == missing_authors[i])] <- author_short
+  }
+  
 }
+
+
+# check how well this did
+books %>% filter(!is.na(fixed_url)) %>% distinct(fixed_url) %>% count()
+# found 15 more author pages
+
+
+## overwrite basic_url with fixed_url for new finds, then rerun section above
+books$fixed_url
 
 
 
@@ -284,6 +325,9 @@ birth_place <- trimws(birth_place)
 
 
 ### match country names ---------
+
+
+
 
 
 
