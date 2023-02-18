@@ -42,7 +42,22 @@ remDr$navigate('https://www.wikipedia.org/')
 
 
 
-### scrape Wikipedia for author's country of origin ---------
+### scrape Wikipedia for author's URL ---------
+
+# initialize column to store author URL
+books$url <- NULL
+
+# define buffer to not overload website
+buffer_sec <- 2
+Sys.sleep(buffer_sec)
+
+
+## need error catching!
+
+
+# Douglas Stuart - ambiguous
+# Isaac Fitzgerald - no side bar
+
 
 # search for search box element
 search_box <- remDr$findElement(using = 'id', value = 'searchInput')
@@ -59,36 +74,35 @@ author_url <- remDr$getCurrentUrl()[[1]]
 # parse URL, just keeping author extension (last element)
 author_short <- tail(str_split(author_url, "/")[[1]], 1)
 
-# use XML route
-remDr$navigate(paste0("https://en.wikipedia.org/wiki/Special:Export/", author_short))
 
 
-# next step: how to get "birth_place" from XML:
-# https://en.wikipedia.org/wiki/Special:Export/Viet_Thanh_Nguyen
+### use Wikipedia JSON to find author's country of origin ---------
 
-test <- remDr$findElement(using = 'xpath', 'birth_place')
+# ok JSON route
+json_url <- paste0("https://en.wikipedia.org//w/api.php?action=query&format=json&prop=revisions&titles=", author_short,
+                   "&formatversion=2&rvprop=content&rvslots=*")
+  
+library(RJSONIO)
 
-test <- remDr$findElement(using = 'xpath', '//mediawiki/page/revision/text')
+info <- fromJSON(json_url)
 
-remDr$findElement(using = 'xpath', 'mediawiki')
+# get content - the giant text mass
+content <- info$query$pages[[1]]$revisions[[1]]$slots$main[["content"]]
 
-remDr$findElement(using = "link text", "birth_place")
+content_split <- str_split(content, "\\n\\| ")[[1]] # split on new lines
 
-mediawiki > page > revision > text
+birth_place <- content_split[which(str_detect(content_split, "birth_place"))] # search for birth_place keyword
 
-mediawiki/page/revision/text
+# clean up a bit to just get string
+birth_place <- str_remove(birth_place, "birth_place")
+birth_place <- str_remove(birth_place, "=")
+birth_place <- str_remove_all(birth_place, "\\[\\[")
+birth_place <- str_remove_all(birth_place, "\\]\\]")
+birth_place <- trimws(birth_place)
+# good enough for now
 
 
-# get 'Born' info from side bar
-# hard because there is no id - just class that is reused multiple times
-# born_box <- remDr$findElements(using = "class", value = "infobox-label")
-# born_text <- born_box$getElementAttribute("innerHTML")[[1]]
-
-
-
-## use XML route instead??
-https://en.wikipedia.org/wiki/Special:Export/Viet_Thanh_Nguyen
-birth_place = [[Buôn Ma Thuột|Ban Mê Thuột]], [[South Vietnam]]
+# store for author
 
 
 ### get world map and country info ---------
