@@ -2,7 +2,7 @@ library(tidyverse)
 library(magrittr)
 library(readxl)
 library(RJSONIO) # for reading Wiki JSON files
-# library(RSelenium) # for scraping Wiki pages
+library(sf) # for handling shape files
 
 ### download exported library from Goodreads ---------
 # download data by going to My Books > on side bar under Tools, select Import and export > click Export Library
@@ -17,30 +17,7 @@ books %<>%
   select(id = `Book Id`, year = `Original Publication Year`, title = Title, author = Author, isbn = ISBN)
 
 
-### set up RSelenium for web scraping ---------
-
-# # # close docker container from before (skip if first run)
-# system('docker stop firefox')
-# system('docker rm firefox')
-# 
-# # set up docker container
-# system('docker run --platform linux/amd64 --name firefox -v /dev/shm:/dev/shm -d -p 4567:4444 -p 5901:5900 selenium/standalone-firefox:latest')
-# 
-# # check new container open
-# # system('docker ps -a')
-# 
-# # open a virtual network
-# system('open vnc://127.0.0.1:5901')
-# 
-# # specify the remote driver
-# remDr <- remoteDriver(port = 4567L, browser = "firefox")
-# 
-# # open up a firefox window in the VNC
-# remDr$open()
-
-
-
-### first pass using simple Wiki extension for author JSON ------------------
+### scrape author home country from Wiki JSON ---------------------------------
 
 ## assume simple Wikipedia extension
 
@@ -133,7 +110,7 @@ for(i in 1:nrow(books)){
 
 
 
-
+### do manual country search for missing authors ----------------------------
 
 ## next: get list of missing authors and fill in manually
 
@@ -146,9 +123,9 @@ books %<>%
     author %in% c("Isaac Fitzgerald", "Dan Schilling", "Cal Newport", "Marguerite Roza", "Emily Nagoski", 
                   "Meg Jay", "Helaine Olen", "J.D. Vance", "Nancy Foner", "Alfred Lansing", "Oren Cass",
                   "Stanley D. Frank", "Susan Cain", "Kerry Patterson", "Joel Best", "Spencer Johnson",
-                  "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations") ~ "US",
-    author %in% c("J.K. Rowling", "Alex Rawlings", "Oliver Burkeman", "Rob Hopkins", "Douglas   Stuart",
-                  "Greg McKeown") ~ "UK",
+                  "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations") ~ "United States",
+    author %in% c("J.K. Rowling", "Alex Rawlings", "Oliver Burkeman", "Rob Hopkins", "Greg McKeown",
+                  "Douglas   Stuart") ~ "United Kingdom",
     author %in% c("Sohn Won-Pyung") ~ "South Korea",
     author %in% c("Gabriel García Márquez") ~ "Colombia",
     author %in% c("Abhijit V. Banerjee") ~ "India",
@@ -165,166 +142,61 @@ books %<>%
 
 
 
+### harmonize author home country variable -----------------------------------
 
+## manual harmonization of Wiki scrapes
+scraped_places <- books %>% filter(!is.na(birth_place_parsed)) %>% distinct(birth_place_parsed) %>% pull()
 
+# only do these if they don't match later (have to update/standardize some country names)
+books %<>% 
+  mutate(birth_place_fixed = case_when(
+    birth_place_parsed %in% c("U.S.", "Wisconsin", "Los Angeles", "US", "Massachusetts", "U.S", "New York", "Idaho", 
+                              "Pennsylvania") ~ "United States",
+    birth_place_parsed %in% c("England", "UK", "Scotland") ~ "United Kingdom",
+    birth_place_parsed %in% c("South Vietnam") ~ "Vietnam",
+    birth_place_parsed %in% c("México") ~ "Mexico",
+    birth_place_parsed %in% c("German Empire") ~ "Germany",
+    birth_place_parsed %in% c("Russian Empire") ~ "Russia",
+    birth_place_parsed %in% c("Ottoman Empire") ~ "Lebanon",
+    birth_place_parsed %in% c("Khmer Republic") ~ "Cambodia",
+    birth_place_parsed %in% c("Austria-Hungary") ~ "Czech Republic",
+    birth_place_parsed %in% c("French Algeria") ~ "Algeria",
+    birth_place_parsed %in% c("British India") ~ "India",
+    birth_place_parsed %in% c("British Nigeria") ~ "Nigeria",
+    
+    # some exceptionally screwed up ones
+    str_detect(birth_place_parsed, "Walter\\}\\}") ~ "United States",
+    str_detect(birth_place_parsed, "name=fn1\\}\\}|Northamptonshire") ~ "United Kingdom",
+    
+    # template: birth_place_parsed %in% c() ~ "",
+    
+    TRUE ~ birth_place_parsed
+  ))
 
-### scrape Wikipedia for missing author's URL ---------
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 
 
+### get world map and match country info ---------
 
-# initialize column to store author URL
-books$fixed_url <- NA
+# download publicly available world map from IPUMS: https://international.ipums.org/international/gis.shtml
 
-# define buffer to not overload website
-buffer_sec <- 1
+map <- st_read("/Users/alexisathens/Documents/Personal/R/reading-around-the-world/World Map/IPUMSI_world_release2020/world_countries_2020.shp")
 
-## loop through all books and get author's Wiki URL
-for(i in 1:length(missing_authors)){
+country_names <- map$CNTRY_NAME
+country_names <- data.frame(country_name = country_names) # convert to df
 
-  # send message to console
-  cat(paste0("**** Retrieving info for author ", i, " of ", length(missing_authors), " ****  \n")); flush.console()
 
-  # navigate to Wikipedia
-  remDr$navigate('https://www.wikipedia.org/')
-  Sys.sleep(buffer_sec)
+## check which names don't map over, go back and fix above
 
-  # search for search box element
-  search_box <- remDr$findElement(using = 'id', value = 'searchInput')
-  Sys.sleep(buffer_sec)
+# manual names first
+manual_names <- books %>% distinct(birth_place_manual) %>% drop_na() %>% pull()
+setdiff(manual_names, country_names$country_name)
 
-  # enter author name into search bar and go
-  search_box$sendKeysToElement(list(missing_authors[i], key = 'enter'))
-  Sys.sleep(buffer_sec)
+# then parsed names
+auto_names <- books %>% distinct(birth_place_fixed) %>% drop_na() %>% pull()
+setdiff(auto_names, country_names$country_name)
 
-  # give time for page to load
-  remDr$setTimeout(type = "page load", milliseconds = 10000)
 
-  # check if a disambiguation page
-  ambiguous <- NULL
-
-  try(ambiguous <- remDr$findElement(using = "link text", value = "disambiguation"), silent = TRUE)
-
-  if(!is.null(ambiguous)){
-    # if it's an ambiguous page, skip to the next author and continue
-    next
-  }
-
-  # get URL of author webpage
-  author_url <- remDr$getCurrentUrl()[[1]]
-  Sys.sleep(buffer_sec)
-
-  # parse URL, just keeping author extension (last element)
-  author_short <- tail(str_split(author_url, "/")[[1]], 1)
-  
-  # compare to current author URL
-  author_curr_url <- books$basic_url[which(books$author == missing_authors[i])]
-  
-  if(any(author_short != author_curr_url)){
-    # if different from basic URL, store it
-    books$fixed_url[which(books$author == missing_authors[i])] <- author_short
-  }
-  
-}
-
-
-# check how well this did
-books %>% filter(!is.na(fixed_url)) %>% distinct(fixed_url) %>% count()
-# found 15 more author pages
-
-
-## overwrite basic_url with fixed_url for new finds, then rerun section above
-books$fixed_url
-
-
-
-
-
-
-
-## need error catching!
-
-# Douglas Stuart - ambiguous
-# Isaac Fitzgerald - no side bar
-
-# checking if country in the list exists
-suppressMessages({
-  try(elem <- remDr$findElement(using = "link text", value = this_country_name), silent = TRUE)
-})
-
-if(is.null(elem)){ # if the country isn't on the WTO website, skip it
-
-  next # next skips the current iteration of the loop (skips to the next c)
-  # see: https://www.datamentor.io/r-programming/break-next/
-
-}
-
-
-# search for search box element
-search_box <- remDr$findElement(using = 'id', value = 'searchInput')
-
-# enter author name into search bar and go
-search_box$sendKeysToElement(list(books$author[5], key = 'enter'))
-
-# give time for page to load
-remDr$setTimeout(type = "page load", milliseconds = 10000)
-
-# get URL of author webpage
-author_url <- remDr$getCurrentUrl()[[1]]
-
-# parse URL, just keeping author extension (last element)
-author_short <- tail(str_split(author_url, "/")[[1]], 1)
-
-
-
-
-
-
-
-books %>% 
-  filter(is.na(birth_place)) %>% 
-  distinct(author)
-
-books$birth_place
-# take behind last comma
-
-
-
-
-
-### use Wikipedia JSON to find author's country of origin ---------
-
-# ok JSON route
-json_url <- paste0("https://en.wikipedia.org//w/api.php?action=query&format=json&prop=revisions&titles=", author_short,
-                   "&formatversion=2&rvprop=content&rvslots=*")
-  
-library(RJSONIO)
-
-info <- fromJSON(json_url)
-
-# get content - the giant text mass
-content <- info$query$pages[[1]]$revisions[[1]]$slots$main[["content"]]
-
-content_split <- str_split(content, "\\n\\| ")[[1]] # split on new lines
-
-birth_place <- content_split[which(str_detect(content_split, "birth_place"))] # search for birth_place keyword
-
-# clean up a bit to just get string
-birth_place <- str_remove(birth_place, "birth_place")
-birth_place <- str_remove(birth_place, "=")
-birth_place <- str_remove_all(birth_place, "\\[\\[")
-birth_place <- str_remove_all(birth_place, "\\]\\]")
-birth_place <- trimws(birth_place)
-# good enough for now
-
-
-# store for author
-
-
-### get world map and country info ---------
-
-
-
-### match country names ---------
 
 
 
@@ -334,3 +206,4 @@ birth_place <- trimws(birth_place)
 ### color world map based on read count ---------
 
 
+# ggplot() + geom_sf(data = map, color = "darkgreen") # takes FOREVER
