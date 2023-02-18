@@ -215,11 +215,40 @@ for(i in 1:nrow(books)){
 }
 
 
-mean(is.na(books$birth_place)) # only got 1/3..
+mean(!is.na(books$birth_place)) # about 2/3 of authors found
+
+books$birth_place_parsed <- NA
+
+# parse strings, taking last chunk as country
+for(i in 1:nrow(books)){
+  # parse first on comma
+  temp <- trimws(tail(str_split(books$birth_place, ",")[[i]], 1))
+  
+  # then on |, if needed
+  if(str_detect(temp, "\\|") & !is.na(temp)){
+    temp <- trimws(tail(str_split(temp, "\\|")[[1]], 1))
+  }
+  
+  # fill in parsed version
+  books$birth_place_parsed[i] <- temp
+}
+
+
+
+## make manual adjustments for those on the list
+
+
+
+
+
+
 
 books %>% 
   filter(is.na(birth_place)) %>% 
   distinct(author)
+
+books$birth_place
+# take behind last comma
 
 
 
