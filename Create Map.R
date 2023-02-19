@@ -10,8 +10,8 @@ library(RColorBrewer) # for custom color palettes
 
 books <- read_csv("/Users/alexisathens/Documents/Personal/Reading/goodreads_library_export-end-of-2022.csv")
 
-# just keep books that are marked as 'read'
-books %<>% filter(!is.na(`Date Read`))
+# just keep books that are marked not on a bookshelf (read)
+books %<>% filter(is.na(Bookshelves))
 
 # select and rename relevant columns
 books %<>% 
@@ -131,7 +131,8 @@ books %<>%
                   "Timothy Ferriss", "Kim Malone Scott", "A. Poulin Jr.", "United Nations", "Torrey Peters",
                   "Melissa Febos", "Nicholas Carr", "Finn Murphy", "Lori Gottlieb", "Paul Kalanithi", "Andy Hunt",
                   "Robert T. Kiyosaki", "Kurt Vonnegut Jr.", "James Clear", "Lee Airton", "Matthew Desmond",
-                  "William Finnegan") ~ "United States",
+                  "William Finnegan", "Brené Brown", "J.D. Salinger", "Susannah Cahalan", "Michael A. Singer",
+                  "Mark Sundeen") ~ "United States",
     author %in% c("J.K. Rowling", "Alex Rawlings", "Oliver Burkeman", "Rob Hopkins", "Greg McKeown",
                   "Douglas   Stuart", "Mary Wollstonecraft Shelley") ~ "United Kingdom",
     author %in% c("Sohn Won-Pyung", "Cho Nam-Joo") ~ "South Korea",
@@ -142,9 +143,9 @@ books %<>%
     author %in% c("Viktor E. Frankl") ~ "Austria",
     author %in% c("Hyeonseo Lee") ~ "North Korea",
     author %in% c("Rory Carroll") ~ "Ireland",
-    author %in% c("Wade Davis") ~ "Canada",
+    author %in% c("Wade Davis", "David  Brooks") ~ "Canada",
     author %in% c("Walpola Rahula") ~ "Sri Lanka",
-    
+    author %in% c("Lao Tzu") ~ "China",
     
     # template: author %in% c() ~ ""
     
@@ -181,6 +182,7 @@ books %<>%
     # some exceptionally screwed up ones
     str_detect(birth_place_parsed, "Walter\\}\\}") ~ "United States",
     str_detect(birth_place_parsed, "name=fn1\\}\\}|Northamptonshire") ~ "United Kingdom",
+    str_detect(birth_place_parsed, "USSR") ~ "United States", # actually just Bob Dylan
     
     # template: birth_place_parsed %in% c() ~ "",
     
@@ -225,7 +227,7 @@ books %<>%
   mutate(birth_place = ifelse(is.na(birth_place), birth_place_fixed, birth_place))
 
 # double check no missing countries
-books %>% filter(is.na(birth_place))
+books %>% filter(is.na(birth_place)) %>% select(author)
 
 # drop intermediary fields
 books %<>% select(id:year_read, birth_place)
@@ -310,6 +312,8 @@ annotation2 <- paste0("New books read in 2022: ", total_books_latest, "\n",
 my_map <- my_map +
   annotate("text", x = -17000000, y = -4000000, label = annotation1, hjust = 0, color = "black", size = 4) +
   annotate("text", x = -17000000, y = -6000000, label = annotation2, hjust = 0, color = "black", size = 4)
+
+my_map
 
 
 # save plot!
