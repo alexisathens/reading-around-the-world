@@ -3,6 +3,7 @@ library(magrittr)
 library(readxl)
 library(RJSONIO) # for reading Wiki JSON files
 library(sf) # for handling shape files
+library(RColorBrewer) # for custom color palettes
 
 ### download exported library from Goodreads ---------
 # download data by going to My Books > on side bar under Tools, select Import and export > click Export Library
@@ -14,7 +15,11 @@ books %<>% filter(!is.na(`Date Read`))
 
 # select and rename relevant columns
 books %<>% 
-  select(id = `Book Id`, year = `Original Publication Year`, title = Title, author = Author, isbn = ISBN)
+  select(id = `Book Id`, year = `Original Publication Year`, title = Title, author = Author, year_read = `Date Read`)
+
+# make year read a year field
+books %<>% 
+  mutate(year_read = paste0("20", str_sub(year_read, -2)))
 
 
 ### scrape author home country from Wiki JSON ---------------------------------
@@ -165,7 +170,7 @@ books %<>%
     birth_place_parsed %in% c("South Vietnam") ~ "Vietnam",
     birth_place_parsed %in% c("México") ~ "Mexico",
     birth_place_parsed %in% c("German Empire") ~ "Germany",
-    birth_place_parsed %in% c("Russian Empire") ~ "Russia",
+    birth_place_parsed %in% c("Russian Empire") ~ "Russian Federation",
     birth_place_parsed %in% c("Ottoman Empire") ~ "Lebanon",
     birth_place_parsed %in% c("Khmer Republic") ~ "Cambodia",
     birth_place_parsed %in% c("Austria-Hungary") ~ "Czech Republic",
@@ -187,11 +192,17 @@ books %<>%
 
 ### get world map and match country info ---------
 
-# download publicly available world map from IPUMS: https://international.ipums.org/international/gis.shtml
+# download publicly available world map from AcrGIS: https://hub.arcgis.com/datasets/esri::world-countries-generalized/explore
 
-map <- st_read("/Users/alexisathens/Documents/Personal/R/reading-around-the-world/World Map/IPUMSI_world_release2020/world_countries_2020.shp")
+map <- st_read("/Users/alexisathens/Documents/Personal/R/reading-around-the-world/World Map/World_Countries_(Generalized)/World_Countries__Generalized_.shp")
 
-country_names <- map$CNTRY_NAME
+# check number of vertices to make sure map is tractable
+# sum(rapply(st_geometry(map), nrow))
+
+# check out basic world map
+# ggplot() + geom_sf(data = map)
+
+country_names <- map$COUNTRY
 country_names <- data.frame(country_name = country_names) # convert to df
 
 
@@ -217,26 +228,83 @@ books %<>%
 books %>% filter(is.na(birth_place))
 
 # drop intermediary fields
-books %<>% select(id:author, birth_place)
+books %<>% select(id:year_read, birth_place)
 
 # finally, aggregate to country level!
 country_reads <- books %>% 
   group_by(birth_place) %>% 
-  count() %>% 
-  ungroup() %>% 
-  rename(books = n)
+  summarize(books = n(), first_year = min(year_read)) %>% 
+  ungroup()
 
 
 
 ### color world map based on read count ---------
 
-## check out basic world map
 
-ggplot() + geom_sf(data = map) # takes FOREVER
+## manually define groups and colors
+
+# display.brewer.all() # run to see palette options
+palette <- brewer.pal(n = 5, "YlGn") # set 5 levels of color
+palette <- c("#D3D3D3", palette) # add light gray for NA
+
+# manually define color groups (will need to change thresholds based on metric of interest)
+country_reads %<>% 
+  mutate(color_group = case_when(
+    books >= 1 & books < 3 ~ 1,
+    books >= 3 & books < 6 ~ 2,
+    books >= 6 & books < 10 ~ 3,
+    books >= 10 & books < 20 ~ 4,
+    books >= 20 ~ 5,
+    TRUE ~ 0)) # define 0 if NA
 
 
-## aggregate data based on country level and join to map df
+# join to world map
+map %<>% left_join(country_reads, by = c("COUNTRY" = "birth_place"))
+
+map %<>% 
+  mutate(books = ifelse(is.na(books), 0, books),
+         color_group = ifelse(is.na(color_group), 0, color_group))
 
 
+# plot map
+my_map <- ggplot(map) +
+  geom_sf(aes(fill = factor(color_group)), color = "black") +
+  scale_fill_manual(values = palette,
+                    name = "Books Read per Country", 
+                    labels = c("0 books", "1-2 books", "3-5 books", "6-9 books", "20+ books")) + # manually removed 10-19
+  ggtitle("Number of Books Read by Author's Country of Origin (2022)") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank()) +
+  theme(legend.position = "bottom",
+        legend.background = element_blank(),
+        legend.key.size = unit(0.5, "cm"),
+        legend.key.width = unit(0.5, "cm"),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank()) +
+  coord_sf(crs = st_crs('ESRI:54030'))
 
 
+## some final touches
+
+# aggregate data for annotation layer
+total_books <- length(books %>% distinct(title) %>% pull())
+total_books_latest <- length(books %>% filter(year_read == 2022) %>% distinct(title) %>% pull())
+
+total_countries <- length(country_reads %>% distinct(birth_place) %>% pull())
+total_countries_latest <- length(country_reads %>% filter(first_year == 2022) %>% distinct(birth_place) %>% pull())
+
+annotation <- paste0("Total books read: ", total_books, "\n",
+                     "Total countries read: ", total_countries, "\n",
+                     "New books read in 2022: ", total_books_latest, "\n",
+                     "New countries read in 2022: ", total_countries_latest)
+
+
+# get projected bounds: https://epsg.io/54030
+my_map +
+  annotate("text", x = -17000000, y = -5000000, label = annotation, hjust = 0, color = "black", size = 4)
+  
+  
