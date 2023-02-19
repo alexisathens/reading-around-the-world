@@ -272,7 +272,7 @@ my_map <- ggplot(map) +
   scale_fill_manual(values = palette,
                     name = "Books Read per Country", 
                     labels = c("0 books", "1-2 books", "3-5 books", "6-9 books", "20+ books")) + # manually removed 10-19
-  ggtitle("Number of Books Read by Author's Country of Origin (2022)") +
+  ggtitle("Number of Books Read by Author's Country of Origin") +
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank(),
         axis.text.y=element_blank(),
@@ -297,14 +297,23 @@ total_books_latest <- length(books %>% filter(year_read == 2022) %>% distinct(ti
 total_countries <- length(country_reads %>% distinct(birth_place) %>% pull())
 total_countries_latest <- length(country_reads %>% filter(first_year == 2022) %>% distinct(birth_place) %>% pull())
 
-annotation <- paste0("Total books read: ", total_books, "\n",
-                     "Total countries read: ", total_countries, "\n",
-                     "New books read in 2022: ", total_books_latest, "\n",
-                     "New countries read in 2022: ", total_countries_latest)
+
+# split annotations into two to give more space
+annotation1 <- paste0("Total books read: ", total_books, "\n",
+                     "Total countries read: ", total_countries, "\n")
+
+annotation2 <- paste0("New books read in 2022: ", total_books_latest, "\n",
+                      "New countries read in 2022: ", total_countries_latest)
 
 
 # get projected bounds: https://epsg.io/54030
-my_map +
-  annotate("text", x = -17000000, y = -5000000, label = annotation, hjust = 0, color = "black", size = 4)
-  
-  
+my_map <- my_map +
+  annotate("text", x = -17000000, y = -4000000, label = annotation1, hjust = 0, color = "black", size = 4) +
+  annotate("text", x = -17000000, y = -6000000, label = annotation2, hjust = 0, color = "black", size = 4)
+
+
+# save plot!
+# ggsave(path = "/Users/alexisathens/Documents/Personal/R/reading-around-the-world", 
+#        filename = "world_map_2022", width = 5, height = 3.5, device = 'tiff', dpi = 700)
+
+# actually just found it better to save the plot extended into a new window as a tiff and then screenshot that
