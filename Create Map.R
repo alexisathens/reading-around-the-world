@@ -235,7 +235,7 @@ books %<>% select(id:year_read, birth_place)
 # finally, aggregate to country level!
 country_reads <- books %>% 
   group_by(birth_place) %>% 
-  summarize(books = n(), first_year = min(year_read)) %>% 
+  summarize(books = n(), latest_year = max(year_read)) %>% 
   ungroup()
 
 
@@ -297,21 +297,21 @@ total_books <- length(books %>% distinct(title) %>% pull())
 total_books_latest <- length(books %>% filter(year_read == 2022) %>% distinct(title) %>% pull())
 
 total_countries <- length(country_reads %>% distinct(birth_place) %>% pull())
-total_countries_latest <- length(country_reads %>% filter(first_year == 2022) %>% distinct(birth_place) %>% pull())
+total_countries_latest <- length(country_reads %>% filter(latest_year == 2022) %>% distinct(birth_place) %>% pull())
 
 
 # split annotations into two to give more space
 annotation1 <- paste0("Total books read: ", total_books, "\n",
                      "Total countries read: ", total_countries, "\n")
 
-annotation2 <- paste0("New books read in 2022: ", total_books_latest, "\n",
-                      "New countries read in 2022: ", total_countries_latest)
+annotation2 <- paste0("Total books read in 2022: ", total_books_latest, "\n",
+                      "Total countries read in 2022: ", total_countries_latest)
 
 
 # get projected bounds: https://epsg.io/54030
 my_map <- my_map +
-  annotate("text", x = -17000000, y = -4000000, label = annotation1, hjust = 0, color = "black", size = 4) +
-  annotate("text", x = -17000000, y = -6000000, label = annotation2, hjust = 0, color = "black", size = 4)
+  annotate("text", x = -16800000, y = -3000000, label = annotation1, hjust = 0, color = "black", size = 4) +
+  annotate("text", x = -16800000, y = -5000000, label = annotation2, hjust = 0, color = "black", size = 4)
 
 my_map
 
